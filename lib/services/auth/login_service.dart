@@ -1,118 +1,160 @@
-import 'dart:io';
-
 import 'package:bcrypt/bcrypt.dart';
 import 'package:dart_frog/dart_frog.dart';
-import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:postgres/postgres.dart';
 
-import 'package:tic_one_middleware/database.dart';
+import '../../database.dart';
+import 'auth_utils.dart';
 
 class LoginService {
-  static Future<Response> execute(RequestContext context) async {
+  static Future<Response> execute(
+    RequestContext context,
+  ) async {
+    // Read request body
     final body = await context.request.json();
 
-    final email = body['email'];
-    final password = body['password'];
-
-    if (email is! String ||
-        password is! String ||
-        email.trim().isEmpty ||
-        password.isEmpty) {
+    if (body is! Map) {
       return Response.json(
         statusCode: 400,
         body: {
-          'success': false,
-          'message': 'Email and password are required',
+          'error': 'Request body must be a JSON object',
         },
       );
     }
 
-    final jwtSecret = Platform.environment['JWT_SECRET'];
+    // Get login fields
+    final email = body['email'];
+    final password = body['password'];
 
-    if (jwtSecret == null || jwtSecret.isEmpty) {
+    // Validate fields
+    if (email is! String || password is! String) {
       return Response.json(
-        statusCode: 500,
+        statusCode: 400,
         body: {
-          'success': false,
-          'message': 'Authentication is not configured',
+          'error': 'Email and password are required',
         },
       );
     }
 
-    final db = await Database.connect();
+    final cleanEmail = email.trim().toLowerCase();
+
+    if (cleanEmail.isEmpty || password.isEmpty) {
+      return Response.json(
+        statusCode: 400,
+        body: {
+          'error': 'Email and password cannot be empty',
+        },
+      );
+    }
+
+    // Connect to PostgreSQL
+    final connection = await openDatabaseConnection();
 
     try {
-      final result = await db.execute(
+      // Find user
+      final result = await connection.execute(
         Sql.named('''
-          SELECT id, name, email, password_hash
+          SELECT
+            id,
+            name,
+            email,
+            password_hash
           FROM login_auth
           WHERE email = @email
+          LIMIT 1
         '''),
         parameters: {
-          'email': email.trim().toLowerCase(),
+          'email': cleanEmail,
         },
       );
 
+      // User does not exist
       if (result.isEmpty) {
         return Response.json(
           statusCode: 401,
           body: {
-            'success': false,
-            'message': 'Invalid email or password',
+            'error': 'Invalid email or password',
           },
         );
       }
 
       final row = result.first;
 
+      final userId = row[0] as int;
+      final name = row[1] as String;
+      final userEmail = row[2] as String;
       final passwordHash = row[3] as String;
 
-      final isPasswordValid = BCrypt.checkpw(
+      // Verify password
+      final passwordValid = BCrypt.checkpw(
         password,
         passwordHash,
       );
 
-      if (!isPasswordValid) {
+      if (!passwordValid) {
         return Response.json(
           statusCode: 401,
           body: {
-            'success': false,
-            'message': 'Invalid email or password',
+            'error': 'Invalid email or password',
           },
         );
       }
 
-      final userId = row[0];
+      // Create access token
+      final accessToken = AuthUtils.createAccessToken(
+        userId: userId,
+        email: userEmail,
+      );
 
-      final jwt = JWT(
-        {
+      // Create refresh token
+      final refreshToken = AuthUtils.createRandomToken();
+
+      // Never store raw refresh token in DB
+      final refreshTokenHash = AuthUtils.hashToken(
+        refreshToken,
+      );
+
+      final refreshExpiresAt = DateTime.now().toUtc().add(
+        const Duration(days: 30),
+      );
+
+      // Save refresh token hash
+      await connection.execute(
+        Sql.named('''
+          INSERT INTO refresh_tokens (
+            user_id,
+            token_hash,
+            expires_at
+          )
+          VALUES (
+            @userId,
+            @tokenHash,
+            @expiresAt
+          )
+        '''),
+        parameters: {
           'userId': userId,
-          'email': row[2],
+          'tokenHash': refreshTokenHash,
+          'expiresAt': refreshExpiresAt,
         },
-        issuer: 'tic_one_middleware',
       );
 
-      final token = jwt.sign(
-        SecretKey(jwtSecret),
-        expiresIn: const Duration(hours: 1),
-      );
-
+      // Login successful
       return Response.json(
+        statusCode: 200,
         body: {
-          'success': true,
           'message': 'Login successful',
-          'data': {
-            'token': token,
-            'user': {
-              'id': userId,
-              'name': row[1],
-              'email': row[2],
-            },
+          'accessToken': accessToken,
+          'refreshToken': refreshToken,
+          'expiresIn': 900,
+          'user': {
+            'id': userId,
+            'name': name,
+            'email': userEmail,
           },
         },
       );
     } finally {
-      await db.close();
+      await connection.close();
     }
   }
 }
