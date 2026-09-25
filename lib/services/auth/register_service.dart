@@ -1,41 +1,56 @@
 import 'package:bcrypt/bcrypt.dart';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
+import 'package:tic_one_middleware/utils/app_logger.dart';
+
 import '../../database.dart';
+import 'auth_utils.dart';
 
 class RegisterService {
   static Future<Response> execute(
     RequestContext context,
   ) async {
-    // --------------------------------------------------
-    // 1. Read request body
-    // --------------------------------------------------
+    AppLogger.info(
+      'REGISTER',
+      '[01] Registration request received',
+    );
 
-    final body = await context.request.json();
+    final body = await AuthUtils.readJson(context);
 
-    // Make sure JSON is an object
-    if (body is! Map) {
+    if (body == null) {
+      AppLogger.warning(
+        'REGISTER',
+        '[02] Invalid JSON body',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
-          'error': 'Request body must be a JSON object',
+          'error': 'Invalid JSON body',
         },
       );
     }
 
-    // --------------------------------------------------
-    // 2. Read fields
-    // --------------------------------------------------
+    AppLogger.info(
+      'REGISTER',
+      '[03] JSON body parsed',
+    );
 
     final name = body['name'];
     final email = body['email'];
     final password = body['password'];
 
-    // --------------------------------------------------
-    // 3. Validate field types
-    // --------------------------------------------------
+    AppLogger.info(
+      'REGISTER',
+      '[04] Registration fields extracted',
+    );
 
     if (name is! String || email is! String || password is! String) {
+      AppLogger.warning(
+        'REGISTER',
+        '[05] Missing or invalid field types',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
@@ -44,18 +59,20 @@ class RegisterService {
       );
     }
 
-    // --------------------------------------------------
-    // 4. Clean input
-    // --------------------------------------------------
-
     final cleanName = name.trim();
     final cleanEmail = email.trim().toLowerCase();
 
-    // --------------------------------------------------
-    // 5. Check empty values
-    // --------------------------------------------------
+    AppLogger.info(
+      'REGISTER',
+      '[06] Input cleaned',
+    );
 
     if (cleanName.isEmpty || cleanEmail.isEmpty || password.isEmpty) {
+      AppLogger.warning(
+        'REGISTER',
+        '[07] Empty input detected',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
@@ -64,11 +81,12 @@ class RegisterService {
       );
     }
 
-    // --------------------------------------------------
-    // 6. Validate password length
-    // --------------------------------------------------
-
     if (password.length < 8) {
+      AppLogger.warning(
+        'REGISTER',
+        '[08] Password too short',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
@@ -77,8 +95,12 @@ class RegisterService {
       );
     }
 
-    // bcrypt has a 72-byte password input limit.
     if (password.length > 72) {
+      AppLogger.warning(
+        'REGISTER',
+        '[09] Password too long',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
@@ -87,15 +109,16 @@ class RegisterService {
       );
     }
 
-    // --------------------------------------------------
-    // 7. Basic email validation
-    // --------------------------------------------------
-
     final emailRegex = RegExp(
       r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
     );
 
     if (!emailRegex.hasMatch(cleanEmail)) {
+      AppLogger.warning(
+        'REGISTER',
+        '[10] Invalid email format',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
@@ -104,25 +127,43 @@ class RegisterService {
       );
     }
 
-    // --------------------------------------------------
-    // 8. Hash password
-    // --------------------------------------------------
+    AppLogger.info(
+      'REGISTER',
+      '[11] Input validation passed',
+    );
+
+    AppLogger.info(
+      'REGISTER',
+      '[12] Hashing password',
+    );
 
     final passwordHash = BCrypt.hashpw(
       password,
       BCrypt.gensalt(),
     );
 
-    // --------------------------------------------------
-    // 9. Connect to PostgreSQL
-    // --------------------------------------------------
+    AppLogger.info(
+      'REGISTER',
+      '[13] Password hash generated',
+    );
+
+    AppLogger.info(
+      'REGISTER',
+      '[14] Opening database connection',
+    );
 
     final connection = await openDatabaseConnection();
 
     try {
-      // ------------------------------------------------
-      // 10. Insert user
-      // ------------------------------------------------
+      AppLogger.info(
+        'REGISTER',
+        '[15] Database connected',
+      );
+
+      AppLogger.info(
+        'REGISTER',
+        '[16] Inserting user into login_auth',
+      );
 
       final result = await connection.execute(
         Sql.named('''
@@ -150,11 +191,17 @@ class RegisterService {
         },
       );
 
-      // ------------------------------------------------
-      // 11. Check duplicate email
-      // ------------------------------------------------
+      AppLogger.info(
+        'REGISTER',
+        '[17] Insert query completed',
+      );
 
       if (result.isEmpty) {
+        AppLogger.warning(
+          'REGISTER',
+          '[18] Email already exists',
+        );
+
         return Response.json(
           statusCode: 409,
           body: {
@@ -163,15 +210,17 @@ class RegisterService {
         );
       }
 
-      // ------------------------------------------------
-      // 12. Read inserted row
-      // ------------------------------------------------
-
       final row = result.first;
 
-      // ------------------------------------------------
-      // 13. Return response
-      // ------------------------------------------------
+      AppLogger.info(
+        'REGISTER',
+        '[19] User created id=${row[0]}',
+      );
+
+      AppLogger.info(
+        'REGISTER',
+        '[20] Registration successful',
+      );
 
       return Response.json(
         statusCode: 201,
@@ -185,12 +234,27 @@ class RegisterService {
           },
         },
       );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'REGISTER',
+        'Registration failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+
+      rethrow;
     } finally {
-      // ------------------------------------------------
-      // 14. Always close database connection
-      // ------------------------------------------------
+      AppLogger.info(
+        'REGISTER',
+        '[21] Closing database connection',
+      );
 
       await connection.close();
+
+      AppLogger.info(
+        'REGISTER',
+        '[22] Database connection closed',
+      );
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
+import 'package:tic_one_middleware/utils/app_logger.dart';
 
 import '../../database.dart';
 import 'auth_utils.dart';
@@ -8,52 +9,84 @@ class ProfileService {
   static Future<Response> execute(
     RequestContext context,
   ) async {
-    print("Bear access token ");
+    AppLogger.info(
+      'PROFILE',
+      '[01] Profile request received',
+    );
 
-    // -----------------------------------------
-    // 1. Get access token from header
-    // -----------------------------------------
+    AppLogger.info(
+      'PROFILE',
+      '[02] Reading Bearer token',
+    );
 
     final token = AuthUtils.getBearerToken(context);
-    print("Bear access token $token");
 
     if (token == null) {
+      AppLogger.warning(
+        'PROFILE',
+        '[03] Access token missing',
+      );
+
       return Response.json(
         statusCode: 401,
-        body: {'error': 'Authorization token is required', 'tocke': '$token'},
+        body: {
+          'error': 'Authorization token is required',
+        },
       );
     }
 
-    // -----------------------------------------
-    // 2. Verify JWT
-    // -----------------------------------------
+    AppLogger.info(
+      'PROFILE',
+      '[03] Access token extracted',
+    );
 
     final int userId;
 
     try {
-      print("verifyAccessToken");
+      AppLogger.info(
+        'PROFILE',
+        '[04] Verifying JWT',
+      );
 
       userId = AuthUtils.verifyAccessToken(token);
-      print("verifyAccessToken $userId");
-    } catch (_) {
-      print("catch");
+
+      AppLogger.info(
+        'PROFILE',
+        '[05] JWT verified userId=$userId',
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'PROFILE',
+        '[05] JWT verification failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
 
       return Response.json(
-        statusCode: 4014,
-        body: {'error': 'Authorization token is required', 'tocke': '$token'},
+        statusCode: 401,
+        body: {
+          'error': 'Invalid or expired access token',
+        },
       );
     }
 
-    // -----------------------------------------
-    // 3. Connect to database
-    // -----------------------------------------
+    AppLogger.info(
+      'PROFILE',
+      '[06] Connecting to database',
+    );
 
     final connection = await openDatabaseConnection();
 
     try {
-      // ---------------------------------------
-      // 4. Find user using userId
-      // ---------------------------------------
+      AppLogger.info(
+        'PROFILE',
+        '[07] Database connected',
+      );
+
+      AppLogger.info(
+        'PROFILE',
+        '[08] Querying login_auth for userId=$userId',
+      );
 
       final result = await connection.execute(
         Sql.named('''
@@ -71,11 +104,17 @@ class ProfileService {
         },
       );
 
-      // ---------------------------------------
-      // 5. User not found
-      // ---------------------------------------
+      AppLogger.info(
+        'PROFILE',
+        '[09] Profile query completed',
+      );
 
       if (result.isEmpty) {
+        AppLogger.warning(
+          'PROFILE',
+          '[10] User not found id=$userId',
+        );
+
         return Response.json(
           statusCode: 404,
           body: {
@@ -86,9 +125,15 @@ class ProfileService {
 
       final row = result.first;
 
-      // ---------------------------------------
-      // 6. Return profile
-      // ---------------------------------------
+      AppLogger.info(
+        'PROFILE',
+        '[11] User found id=${row[0]}',
+      );
+
+      AppLogger.info(
+        'PROFILE',
+        '[12] Profile response created',
+      );
 
       return Response.json(
         statusCode: 200,
@@ -102,8 +147,27 @@ class ProfileService {
           },
         },
       );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'PROFILE',
+        'Profile request failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+
+      rethrow;
     } finally {
+      AppLogger.info(
+        'PROFILE',
+        'Closing database connection',
+      );
+
       await connection.close();
+
+      AppLogger.info(
+        'PROFILE',
+        'Database connection closed',
+      );
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:bcrypt/bcrypt.dart';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
+import 'package:tic_one_middleware/utils/app_logger.dart';
 
 import '../../database.dart';
 import 'auth_utils.dart';
@@ -9,24 +10,46 @@ class LoginService {
   static Future<Response> execute(
     RequestContext context,
   ) async {
-    // Read request body
-    final body = await context.request.json();
+    AppLogger.info(
+      'LOGIN',
+      '[01] Login request received',
+    );
 
-    if (body is! Map) {
+    final body = await AuthUtils.readJson(context);
+
+    if (body == null) {
+      AppLogger.warning(
+        'LOGIN',
+        '[02] Invalid JSON body',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
-          'error': 'Request body must be a JSON object',
+          'error': 'Invalid JSON body',
         },
       );
     }
 
-    // Get login fields
+    AppLogger.info(
+      'LOGIN',
+      '[03] JSON body parsed',
+    );
+
     final email = body['email'];
     final password = body['password'];
 
-    // Validate fields
+    AppLogger.info(
+      'LOGIN',
+      '[04] Login fields extracted',
+    );
+
     if (email is! String || password is! String) {
+      AppLogger.warning(
+        'LOGIN',
+        '[05] Invalid email/password field types',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
@@ -38,6 +61,11 @@ class LoginService {
     final cleanEmail = email.trim().toLowerCase();
 
     if (cleanEmail.isEmpty || password.isEmpty) {
+      AppLogger.warning(
+        'LOGIN',
+        '[06] Empty email or password',
+      );
+
       return Response.json(
         statusCode: 400,
         body: {
@@ -46,11 +74,29 @@ class LoginService {
       );
     }
 
-    // Connect to PostgreSQL
+    AppLogger.info(
+      'LOGIN',
+      '[07] Input validation passed',
+    );
+
+    AppLogger.info(
+      'LOGIN',
+      '[08] Connecting to database',
+    );
+
     final connection = await openDatabaseConnection();
 
     try {
-      // Find user
+      AppLogger.info(
+        'LOGIN',
+        '[09] Database connected',
+      );
+
+      AppLogger.info(
+        'LOGIN',
+        '[10] Searching user in login_auth',
+      );
+
       final result = await connection.execute(
         Sql.named('''
           SELECT
@@ -67,8 +113,17 @@ class LoginService {
         },
       );
 
-      // User does not exist
+      AppLogger.info(
+        'LOGIN',
+        '[11] User query completed',
+      );
+
       if (result.isEmpty) {
+        AppLogger.warning(
+          'LOGIN',
+          '[12] User not found',
+        );
+
         return Response.json(
           statusCode: 401,
           body: {
@@ -84,13 +139,32 @@ class LoginService {
       final userEmail = row[2] as String;
       final passwordHash = row[3] as String;
 
-      // Verify password
+      AppLogger.info(
+        'LOGIN',
+        '[13] User found id=$userId',
+      );
+
+      AppLogger.info(
+        'LOGIN',
+        '[14] Starting password verification',
+      );
+
       final passwordValid = BCrypt.checkpw(
         password,
         passwordHash,
       );
 
+      AppLogger.info(
+        'LOGIN',
+        '[15] Password verification completed',
+      );
+
       if (!passwordValid) {
+        AppLogger.warning(
+          'LOGIN',
+          '[16] Password verification failed',
+        );
+
         return Response.json(
           statusCode: 401,
           body: {
@@ -99,25 +173,54 @@ class LoginService {
         );
       }
 
-      // Create access token
+      AppLogger.info(
+        'LOGIN',
+        '[17] Password verified successfully',
+      );
+
+      AppLogger.info(
+        'LOGIN',
+        '[18] Creating access token',
+      );
+
       final accessToken = AuthUtils.createAccessToken(
         userId: userId,
         email: userEmail,
       );
 
-      // Create refresh token
+      AppLogger.info(
+        'LOGIN',
+        '[19] Access token created',
+      );
+
+      AppLogger.info(
+        'LOGIN',
+        '[20] Creating refresh token',
+      );
+
       final refreshToken = AuthUtils.createRandomToken();
 
-      // Never store raw refresh token in DB
-      final refreshTokenHash = AuthUtils.hashToken(
-        refreshToken,
+      AppLogger.info(
+        'LOGIN',
+        '[21] Refresh token created',
       );
+
+      AppLogger.info(
+        'LOGIN',
+        '[22] Hashing refresh token',
+      );
+
+      final refreshTokenHash = AuthUtils.hashToken(refreshToken);
 
       final refreshExpiresAt = DateTime.now().toUtc().add(
         const Duration(days: 30),
       );
 
-      // Save refresh token hash
+      AppLogger.info(
+        'LOGIN',
+        '[23] Saving refresh token',
+      );
+
       await connection.execute(
         Sql.named('''
           INSERT INTO refresh_tokens (
@@ -138,7 +241,16 @@ class LoginService {
         },
       );
 
-      // Login successful
+      AppLogger.info(
+        'LOGIN',
+        '[24] Refresh token saved',
+      );
+
+      AppLogger.info(
+        'LOGIN',
+        '[25] Login successful for userId=$userId',
+      );
+
       return Response.json(
         statusCode: 200,
         body: {
@@ -153,8 +265,27 @@ class LoginService {
           },
         },
       );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'LOGIN',
+        'Login failed unexpectedly',
+        error: error,
+        stackTrace: stackTrace,
+      );
+
+      rethrow;
     } finally {
+      AppLogger.info(
+        'LOGIN',
+        'Closing database connection',
+      );
+
       await connection.close();
+
+      AppLogger.info(
+        'LOGIN',
+        'Database connection closed',
+      );
     }
   }
 }
