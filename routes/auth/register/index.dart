@@ -1,5 +1,5 @@
 import 'package:dart_frog/dart_frog.dart';
-import '../../../lib/services/auth/register_service.dart';
+import 'package:tic_one_middleware/services/auth/register_service.dart';
 
 Future<Response> onRequest(
   RequestContext context,
