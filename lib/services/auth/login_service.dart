@@ -1,4 +1,4 @@
-import 'package:bcrypt/bcrypt.dart';
+﻿import 'package:bcrypt/bcrypt.dart';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
 
@@ -21,49 +21,56 @@ class LoginService {
       );
     }
 
-    // Get login fields
+    // Accept email, phone, or identifier
     final email = body['email'];
+    final phone = body['phone'];
+    final identifier = body['identifier'] ?? email ?? phone;
     final password = body['password'];
 
     // Validate fields
-    if (email is! String || password is! String) {
+    if (identifier is! String || password is! String) {
       return Response.json(
         statusCode: 400,
         body: {
-          'error': 'Email and password are required',
+          'error': 'Email or mobile number, and password are required',
         },
       );
     }
 
-    final cleanEmail = email.trim().toLowerCase();
+    final cleanIdentifier = identifier.trim();
 
-    if (cleanEmail.isEmpty || password.isEmpty) {
+    if (cleanIdentifier.isEmpty || password.isEmpty) {
       return Response.json(
         statusCode: 400,
         body: {
-          'error': 'Email and password cannot be empty',
+          'error': 'Identifier and password cannot be empty',
         },
       );
     }
+
+    final cleanEmail = cleanIdentifier.toLowerCase();
 
     // Connect to PostgreSQL
     final connection = await openDatabaseConnection();
 
     try {
-      // Find user
+      // Find user by email OR phone
       final result = await connection.execute(
         Sql.named('''
           SELECT
             id,
             name,
             email,
+            phone,
             password_hash
           FROM login_auth
-          WHERE email = @email
+          WHERE email = @cleanEmail
+             OR (phone IS NOT NULL AND phone = @cleanIdentifier)
           LIMIT 1
         '''),
         parameters: {
-          'email': cleanEmail,
+          'cleanEmail': cleanEmail,
+          'cleanIdentifier': cleanIdentifier,
         },
       );
 
@@ -72,7 +79,7 @@ class LoginService {
         return Response.json(
           statusCode: 401,
           body: {
-            'error': 'Invalid email or password',
+            'error': 'Invalid credentials. Please check your email/mobile and password.',
           },
         );
       }
@@ -82,7 +89,8 @@ class LoginService {
       final userId = row[0]! as int;
       final name = row[1]! as String;
       final userEmail = row[2]! as String;
-      final passwordHash = row[3]! as String;
+      final userPhone = row[3] as String?;
+      final passwordHash = row[4]! as String;
 
       // Verify password
       final passwordValid = BCrypt.checkpw(
@@ -94,7 +102,7 @@ class LoginService {
         return Response.json(
           statusCode: 401,
           body: {
-            'error': 'Invalid email or password',
+            'error': 'Invalid credentials. Please check your email/mobile and password.',
           },
         );
       }
@@ -149,6 +157,7 @@ class LoginService {
             'id': userId,
             'name': name,
             'email': userEmail,
+            'phone': userPhone,
           },
         },
       );

@@ -1,24 +1,18 @@
-import 'dart:io';
 import 'package:postgres/postgres.dart';
+import 'package:tic_one_middleware/config/env.dart';
 
 Future<Connection> openDatabaseConnection() async {
-  final password = Platform.environment['DB_PASSWORD'];
-
-  if (password == null || password.isEmpty) {
-    throw StateError(
-      'DB_PASSWORD is not configured',
-    );
-  }
-
   return Connection.open(
     Endpoint(
-      host: 'localhost',
-      database: 'tic_one_backend',
-      username: 'postgres',
-      password: 'root',
+      host: Env.dbHost,
+      port: Env.dbPort,
+      database: Env.dbName,
+      username: Env.dbUser,
+      password: Env.dbPassword,
     ),
     settings: const ConnectionSettings(
       sslMode: SslMode.disable,
     ),
   );
 }
+

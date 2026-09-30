@@ -1,4 +1,4 @@
-import 'dart:math';
+﻿import 'dart:math';
 
 import 'package:bcrypt/bcrypt.dart';
 import 'package:dart_frog/dart_frog.dart';
@@ -33,29 +33,35 @@ class PasswordService {
       );
     }
 
-    final email = body['email'];
-    final otp = body['otp'];
-    final newPassword = body['newPassword'];
+    final email = body['email'] as String?;
+    final phone = body['phone'] as String?;
+    final identifier = (body['identifier'] as String?) ?? email ?? phone;
+    final otp = body['otp'] as String?;
+    final newPassword = body['newPassword'] as String?;
 
     // ==================================================
-    // STAGE 1
-    // EMAIL ONLY = GENERATE OTP
+    // STAGE 1: IDENTIFIER ONLY = GENERATE OTP
     // ==================================================
 
-    if (email is String && otp == null && newPassword == null) {
+    if (identifier != null &&
+        identifier.trim().isNotEmpty &&
+        otp == null &&
+        newPassword == null) {
       return _generateOtp(
-        email: email,
+        rawIdentifier: identifier.trim(),
       );
     }
 
     // ==================================================
-    // STAGE 2
-    // EMAIL + OTP + NEW PASSWORD
+    // STAGE 2: IDENTIFIER + OTP + NEW PASSWORD = RESET
     // ==================================================
 
-    if (email is String && otp is String && newPassword is String) {
+    if (identifier != null &&
+        identifier.trim().isNotEmpty &&
+        otp != null &&
+        newPassword != null) {
       return _resetPassword(
-        email: email,
+        rawIdentifier: identifier.trim(),
         otp: otp,
         newPassword: newPassword,
       );
@@ -73,9 +79,23 @@ class PasswordService {
     return Response.json(
       statusCode: 400,
       body: {
-        'error': 'Send email OR email, otp and newPassword',
+        'error': 'Provide email/phone to request OTP, or email/phone + otp + newPassword to reset',
       },
     );
+  }
+
+  // Helper to normalize phone number
+  static String? _normalizePhone(String input) {
+    String digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('91') && digits.length == 12) {
+      digits = digits.substring(2);
+    } else if (digits.startsWith('0') && digits.length == 11) {
+      digits = digits.substring(1);
+    }
+    if (digits.length == 10) {
+      return '+91$digits';
+    }
+    return null;
   }
 
   // ==================================================
@@ -83,51 +103,24 @@ class PasswordService {
   // ==================================================
 
   static Future<Response> _generateOtp({
-    required String email,
+    required String rawIdentifier,
   }) async {
     AppLogger.info(
       'PASSWORD',
-      '[REQUEST][01] OTP generation started',
+      '[REQUEST][01] OTP generation started for: $rawIdentifier',
     );
 
-    final cleanEmail = email.trim().toLowerCase();
+    final cleanIdentifier = rawIdentifier.trim().toLowerCase();
+    final normalizedPhone = _normalizePhone(rawIdentifier) ?? cleanIdentifier;
 
-    if (cleanEmail.isEmpty) {
-      AppLogger.warning(
-        'PASSWORD',
-        '[REQUEST][02] Email is empty',
-      );
-
+    if (cleanIdentifier.isEmpty) {
       return Response.json(
         statusCode: 400,
         body: {
-          'error': 'Email is required',
+          'error': 'Email or phone number is required',
         },
       );
     }
-
-    final emailRegex = RegExp(
-      r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-    );
-
-    if (!emailRegex.hasMatch(cleanEmail)) {
-      AppLogger.warning(
-        'PASSWORD',
-        '[REQUEST][03] Invalid email format',
-      );
-
-      return Response.json(
-        statusCode: 400,
-        body: {
-          'error': 'Invalid email address',
-        },
-      );
-    }
-
-    AppLogger.info(
-      'PASSWORD',
-      '[REQUEST][04] Email validated',
-    );
 
     final connection = await openDatabaseConnection();
 
@@ -138,19 +131,21 @@ class PasswordService {
       );
 
       // ----------------------------------------------
-      // Find user
+      // Find user by email OR phone
       // ----------------------------------------------
 
       final userResult = await connection.execute(
         Sql.named('''
-          SELECT
-            id
+          SELECT id, email, phone
           FROM login_auth
-          WHERE email = @email
+          WHERE email = @identifier
+             OR phone = @identifier
+             OR phone = @normalizedPhone
           LIMIT 1
         '''),
         parameters: {
-          'email': cleanEmail,
+          'identifier': cleanIdentifier,
+          'normalizedPhone': normalizedPhone,
         },
       );
 
@@ -159,11 +154,11 @@ class PasswordService {
         '[REQUEST][06] User query completed',
       );
 
-      // Same response whether user exists or not.
+      // Same response whether user exists or not (security best practice)
       if (userResult.isEmpty) {
         AppLogger.info(
           'PASSWORD',
-          '[REQUEST][07] No matching user',
+          '[REQUEST][07] No matching user for $cleanIdentifier',
         );
 
         return Response.json(
@@ -206,7 +201,6 @@ class PasswordService {
       // ----------------------------------------------
 
       final random = Random.secure();
-
       final otp = random.nextInt(1000000).toString().padLeft(6, '0');
 
       AppLogger.info(
@@ -220,15 +214,7 @@ class PasswordService {
 
       final otpHash = AuthUtils.hashToken(otp);
 
-      AppLogger.info(
-        'PASSWORD',
-        '[REQUEST][10] OTP hash generated',
-      );
-
-      // ----------------------------------------------
       // Expiry = 10 minutes
-      // ----------------------------------------------
-
       final expiresAt = DateTime.now().toUtc().add(
         const Duration(minutes: 10),
       );
@@ -263,22 +249,12 @@ class PasswordService {
       );
 
       // ----------------------------------------------
-      // DEVELOPMENT ONLY
+      // DEVELOPMENT CONSOLE OTP LOG
       // ----------------------------------------------
 
-      AppLogger.warning(
-        'PASSWORD',
-        '[REQUEST][12] DEV MODE OTP generated',
-      );
-
-      print(
-        'DEV PASSWORD OTP: $otp',
-      );
-
-      AppLogger.info(
-        'PASSWORD',
-        '[REQUEST][13] OTP generation completed',
-      );
+      print('=============================================');
+      print('DEV PASSWORD OTP: $otp (for $rawIdentifier)');
+      print('=============================================');
 
       return Response.json(
         statusCode: 200,
@@ -310,28 +286,28 @@ class PasswordService {
   // ==================================================
 
   static Future<Response> _resetPassword({
-    required String email,
+    required String rawIdentifier,
     required String otp,
     required String newPassword,
   }) async {
     AppLogger.info(
       'PASSWORD',
-      '[RESET][01] Password reset started',
+      '[RESET][01] Password reset started for: $rawIdentifier',
     );
 
-    final cleanEmail = email.trim().toLowerCase();
-
+    final cleanIdentifier = rawIdentifier.trim().toLowerCase();
+    final normalizedPhone = _normalizePhone(rawIdentifier) ?? cleanIdentifier;
     final cleanOtp = otp.trim();
 
     // ----------------------------------------------
     // Basic validation
     // ----------------------------------------------
 
-    if (cleanEmail.isEmpty) {
+    if (cleanIdentifier.isEmpty) {
       return Response.json(
         statusCode: 400,
         body: {
-          'error': 'Email is required',
+          'error': 'Email or phone is required',
         },
       );
     }
@@ -396,21 +372,11 @@ class PasswordService {
       );
     }
 
-    AppLogger.info(
-      'PASSWORD',
-      '[RESET][05] Input validation passed',
-    );
-
     // ----------------------------------------------
     // Hash OTP
     // ----------------------------------------------
 
     final otpHash = AuthUtils.hashToken(cleanOtp);
-
-    AppLogger.info(
-      'PASSWORD',
-      '[RESET][06] OTP hash generated',
-    );
 
     final connection = await openDatabaseConnection();
 
@@ -421,7 +387,7 @@ class PasswordService {
       );
 
       // ----------------------------------------------
-      // Find valid OTP
+      // Find valid OTP for user (by email OR phone)
       // ----------------------------------------------
 
       final result = await connection.execute(
@@ -435,13 +401,18 @@ class PasswordService {
           INNER JOIN login_auth u
             ON u.id = pr.user_id
           WHERE pr.token_hash = @tokenHash
-            AND u.email = @email
+            AND (
+              u.email = @identifier
+              OR u.phone = @identifier
+              OR u.phone = @normalizedPhone
+            )
           ORDER BY pr.id DESC
           LIMIT 1
         '''),
         parameters: {
           'tokenHash': otpHash,
-          'email': cleanEmail,
+          'identifier': cleanIdentifier,
+          'normalizedPhone': normalizedPhone,
         },
       );
 
@@ -453,7 +424,7 @@ class PasswordService {
       if (result.isEmpty) {
         AppLogger.warning(
           'PASSWORD',
-          '[RESET][09] Invalid OTP or email',
+          '[RESET][09] Invalid OTP or identifier',
         );
 
         return Response.json(
@@ -465,19 +436,14 @@ class PasswordService {
       }
 
       final row = result.first;
-
       final resetTokenId = row[0] as int;
-
       final userId = row[1] as int;
-
       final expiresAt = row[2] as DateTime;
-
       final usedAt = row[3];
 
       AppLogger.info(
         'PASSWORD',
-        '[RESET][10] OTP found '
-            'id=$resetTokenId userId=$userId',
+        '[RESET][10] OTP found id=$resetTokenId userId=$userId',
       );
 
       // ----------------------------------------------
@@ -502,9 +468,7 @@ class PasswordService {
       // Check expiry
       // ----------------------------------------------
 
-      if (expiresAt.isBefore(
-        DateTime.now().toUtc(),
-      )) {
+      if (expiresAt.isBefore(DateTime.now().toUtc())) {
         AppLogger.warning(
           'PASSWORD',
           '[RESET][12] OTP expired',
@@ -518,38 +482,18 @@ class PasswordService {
         );
       }
 
-      AppLogger.info(
-        'PASSWORD',
-        '[RESET][13] OTP is valid',
-      );
-
       // ----------------------------------------------
       // Hash new password
       // ----------------------------------------------
-
-      AppLogger.info(
-        'PASSWORD',
-        '[RESET][14] Hashing new password',
-      );
 
       final passwordHash = BCrypt.hashpw(
         newPassword,
         BCrypt.gensalt(),
       );
 
-      AppLogger.info(
-        'PASSWORD',
-        '[RESET][15] New password hash created',
-      );
-
       // ----------------------------------------------
-      // Update password
+      // Update password in login_auth
       // ----------------------------------------------
-
-      AppLogger.info(
-        'PASSWORD',
-        '[RESET][16] Updating login_auth',
-      );
 
       await connection.execute(
         Sql.named('''
@@ -561,11 +505,6 @@ class PasswordService {
           'passwordHash': passwordHash,
           'userId': userId,
         },
-      );
-
-      AppLogger.info(
-        'PASSWORD',
-        '[RESET][17] Password updated successfully',
       );
 
       // ----------------------------------------------
@@ -583,19 +522,9 @@ class PasswordService {
         },
       );
 
-      AppLogger.info(
-        'PASSWORD',
-        '[RESET][18] OTP marked as used',
-      );
-
       // ----------------------------------------------
       // Revoke all refresh tokens
       // ----------------------------------------------
-
-      AppLogger.info(
-        'PASSWORD',
-        '[RESET][19] Revoking active refresh tokens',
-      );
 
       await connection.execute(
         Sql.named('''
@@ -611,18 +540,13 @@ class PasswordService {
 
       AppLogger.info(
         'PASSWORD',
-        '[RESET][20] Existing refresh tokens revoked',
-      );
-
-      AppLogger.info(
-        'PASSWORD',
-        '[RESET][21] Password reset successful',
+        '[RESET][21] Password reset successful for userId=$userId',
       );
 
       return Response.json(
         statusCode: 200,
         body: {
-          'message': 'Password reset successful',
+          'message': 'Password reset successfully',
         },
       );
     } catch (error, stackTrace) {

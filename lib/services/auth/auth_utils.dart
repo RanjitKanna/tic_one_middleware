@@ -1,29 +1,19 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
+import 'package:tic_one_middleware/config/env.dart';
 
 class AuthUtils {
   // --------------------------------------------------
   // JWT CONFIGURATION
   // --------------------------------------------------
 
-  static const String issuer = 'tic_one_middleware';
+  static String get issuer => Env.jwtIssuer;
 
-  static String get jwtSecret {
-    final secret = Platform.environment['JWT_SECRET'];
-
-    if (secret == null || secret.isEmpty) {
-      throw StateError(
-        'JWT_SECRET environment variable is not configured.',
-      );
-    }
-
-    return secret;
-  }
+  static String get jwtSecret => Env.jwtSecret;
 
   // --------------------------------------------------
   // CREATE ACCESS TOKEN
