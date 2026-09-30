@@ -38,7 +38,9 @@ class RegisterService {
     // 4. Clean input
     final cleanName = name.trim();
     final cleanEmail = email.trim().toLowerCase();
-    final cleanPhone = (phone is String && phone.trim().isNotEmpty) ? phone.trim() : null;
+    final cleanPhone = (phone is String && phone.trim().isNotEmpty)
+        ? phone.trim()
+        : null;
 
     // 5. Check empty values
     if (cleanName.isEmpty || cleanEmail.isEmpty || password.isEmpty) {
