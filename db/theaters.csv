@@ -1,0 +1,4 @@
+"id","theater_code","city_id","name","distance_info","landmark","address","formats","latitude","longitude","is_fast_filling","created_at"
+1,"TH_001",1,"Grand IMAX Dolby Suite","1.8 km away • Forum Mall","Forum Mall, 4th Floor","100 Feet Road, Downtown Core","IMAX 70mm Laser 3D, Dolby Atmos",NULL,NULL,True,"2026-10-01 11:44:52.733672+05:30"
+2,"TH_002",1,"Cinepolis VIP Luxury","3.2 km away • Galleria Mall","Galleria Luxury Wing","Avenue Boulevard, Downtown","4DX, Recliner VIP, Dolby 7.1",NULL,NULL,False,"2026-10-01 11:44:52.733672+05:30"
+3,"TH_003",2,"PVR INOX Phoenix Palladium","2.4 km away • Lower Parel","High Street Phoenix","Senapati Bapat Marg, Lower Parel, Mumbai","IMAX Laser, INSIGNIA VIP",NULL,NULL,True,"2026-10-01 11:44:52.733672+05:30"
