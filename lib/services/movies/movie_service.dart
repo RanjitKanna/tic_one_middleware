@@ -408,6 +408,33 @@ class MovieService {
         }
       }
 
+      final now = DateTime.now();
+      final cutoff = now.subtract(const Duration(minutes: 30));
+
+      final filteredTheaters = <Map<String, dynamic>>[];
+      for (final th in theaterMap.values) {
+        final shows = (th['shows'] as List).cast<Map<String, dynamic>>();
+        final validShows = shows.where((show) {
+          final timeStr = show['timeFormatted'] as String? ?? '';
+          final match = RegExp(r'(\d{1,2}):(\d{2})\s*(AM|PM)?', caseSensitive: false).firstMatch(timeStr);
+          if (match == null) return true;
+          int hour = int.parse(match.group(1)!);
+          final min = int.parse(match.group(2)!);
+          final period = match.group(3)?.toUpperCase();
+          if (period == 'PM' && hour < 12) hour += 12;
+          if (period == 'AM' && hour == 12) hour = 0;
+          final d = DateTime.tryParse(date) ?? now;
+          final showDt = DateTime(d.year, d.month, d.day, hour, min);
+          return showDt.isAfter(cutoff);
+        }).toList();
+
+        if (validShows.isNotEmpty) {
+          final thCopy = Map<String, dynamic>.from(th);
+          thCopy['shows'] = validShows;
+          filteredTheaters.add(thCopy);
+        }
+      }
+
       return Response.json(
         body: {
           'status': 'success',
@@ -424,7 +451,7 @@ class MovieService {
             },
             'city': city,
             'date': date,
-            'theaters': theaterMap.values.toList(),
+            'theaters': filteredTheaters,
           },
         },
       );

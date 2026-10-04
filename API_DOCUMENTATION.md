@@ -463,3 +463,122 @@ This document outlines all available endpoints, request/response models, and hea
 * **Endpoint**: `GET /bookings/:bookingCode`
 * **Example**: `GET /bookings/TIC-2026-216175`
 * **Auth**: None (Public digital ticket lookup for gate scanning)
+
+---
+
+### 6.4 Cancel Ticket Booking
+* **Endpoint**: `POST /bookings/:bookingCode/cancel` (or `POST /bookings/cancel`)
+* **Auth**: None / Optional Bearer Token
+
+#### Request Body
+```json
+{
+  "bookingCode": "TIC-2026-216175",
+  "reason": "Change of plans"
+}
+```
+
+#### Success Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "message": "Booking TIC-2026-216175 cancelled successfully. Refund of ₹911.40 initiated.",
+  "data": {
+    "bookingId": 1,
+    "bookingCode": "TIC-2026-216175",
+    "bookingStatus": "cancelled",
+    "paymentStatus": "refunded",
+    "refundAmount": 911.40,
+    "refundStatus": "initiated",
+    "cancelledAt": "2026-10-04T08:15:00.000Z"
+  }
+}
+```
+
+---
+
+### 6.5 Get Cancelled Tickets
+* **Endpoint**: `GET /bookings/cancelled` (or `GET /bookings/my-tickets?status=cancelled`)
+* **Auth**: `Bearer <accessToken>` (Required)
+
+#### Success Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "statusCode": 200,
+  "filter": "cancelled",
+  "count": 1,
+  "data": [
+    {
+      "id": 1,
+      "bookingCode": "TIC-2026-216175",
+      "totalSeats": 2,
+      "ticketAmount": 876.0,
+      "convenienceFee": 35.40,
+      "totalAmount": 911.40,
+      "paymentStatus": "refunded",
+      "bookingStatus": "cancelled",
+      "statusCategory": "cancelled",
+      "movie": {
+        "title": "CYBERPUNK: ODYSSEY",
+        "posterUrl": "https://...",
+        "certificate": "Rated R"
+      },
+      "theater": {
+        "name": "Grand IMAX Dolby Suite",
+        "address": "100 Feet Road, Downtown Core",
+        "screen": "Audi 1 - IMAX 70mm"
+      },
+      "showTime": "2026-10-01T13:45:00.000Z",
+      "timeFormatted": "01:15 PM",
+      "format": "IMAX 70MM",
+      "language": "English",
+      "seats": ["C3", "C4"]
+    }
+  ]
+}
+```
+
+---
+
+### 6.6 Get Past / Completed Tickets
+* **Endpoint**: `GET /bookings/past` (or `GET /bookings/my-tickets?status=past`)
+* **Auth**: `Bearer <accessToken>` (Required)
+
+#### Success Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "statusCode": 200,
+  "filter": "past",
+  "count": 1,
+  "data": [
+    {
+      "id": 2,
+      "bookingCode": "TIC-2026-104928",
+      "totalSeats": 1,
+      "ticketAmount": 438.0,
+      "convenienceFee": 35.40,
+      "totalAmount": 473.40,
+      "paymentStatus": "completed",
+      "bookingStatus": "completed",
+      "statusCategory": "past",
+      "movie": {
+        "title": "AVATAR: FIRE & ASH",
+        "posterUrl": "https://...",
+        "certificate": "UA16+"
+      },
+      "theater": {
+        "name": "Grand IMAX Dolby Suite",
+        "address": "100 Feet Road, Downtown Core",
+        "screen": "Audi 1 - IMAX 70mm"
+      },
+      "showTime": "2026-09-20T18:30:00.000Z",
+      "timeFormatted": "06:30 PM",
+      "format": "IMAX 3D",
+      "language": "English",
+      "seats": ["E12"]
+    }
+  ]
+}
+```

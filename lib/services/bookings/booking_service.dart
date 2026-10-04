@@ -6,6 +6,7 @@ import 'package:postgres/postgres.dart';
 import 'package:tic_one_middleware/database.dart';
 import 'package:tic_one_middleware/services/auth/auth_utils.dart';
 import 'package:tic_one_middleware/utils/app_logger.dart';
+import 'package:tic_one_middleware/services/wallet/wallet_service.dart';
 
 class BookingService {
   static double _toDouble(dynamic val, [double def = 0.0]) {
@@ -96,6 +97,10 @@ class BookingService {
         );
       }
 
+      // Fetch user's active Royal Pass Premium status (Backend source of truth)
+      final royalPass = await WalletService.getRoyalPass(connection, userId);
+      final isPremium = royalPass['status'] == 'PREMIUM_USER' && (royalPass['isActive'] == true);
+
       // Calculate totals
       var subtotal = 0.0;
       final seatsList = <Map<String, dynamic>>[];
@@ -117,8 +122,10 @@ class BookingService {
         });
       }
 
+      // Automatically apply 20% discount if Royal Pass Premium is active
+      final discountAmount = isPremium ? (subtotal * 0.20).roundToDouble() : 0.0;
       const convenienceFee = 35.40;
-      final totalAmount = subtotal + convenienceFee;
+      final totalAmount = (subtotal - discountAmount) + convenienceFee;
 
       final randSuffix = Random().nextInt(899999) + 100000;
       final bookingCode = 'TIC-${DateTime.now().year}-$randSuffix';
@@ -210,6 +217,16 @@ class BookingService {
 
       final details = detailsRes.first;
 
+      // Award CinePoints: 1 ticket book = 5 cinepoints
+      final earnedPoints = seatsList.length * 5;
+      final currentPoints = await WalletService.awardPoints(
+        connection,
+        userId,
+        earnedPoints,
+        'Movie Ticket Booking ($bookingCode - ${seatsList.length} tickets)',
+        bookingCode,
+      );
+
       return Response.json(
         statusCode: HttpStatus.created,
         body: {
@@ -242,6 +259,8 @@ class BookingService {
               'totalAmount': totalAmount,
             },
             'qrCodeData': qrCodeData,
+            'cinepointsEarned': earnedPoints,
+            'currentCinepoints': currentPoints,
           },
         },
       );
@@ -256,8 +275,8 @@ class BookingService {
     }
   }
 
-  // 2. Get User's Booking History (My Tickets)
-  static Future<Response> getUserBookings(RequestContext context) async {
+  // 2. Get User's Booking History (My Tickets, Cancelled, Past, Upcoming)
+  static Future<Response> getUserBookings(RequestContext context, [String? statusFilter]) async {
     final token = AuthUtils.getBearerToken(context);
     if (token == null) {
       return Response.json(
@@ -276,11 +295,27 @@ class BookingService {
       );
     }
 
+    final requestedStatus = (statusFilter ??
+            context.request.uri.queryParameters['status'] ??
+            context.request.uri.queryParameters['type'])
+        ?.trim()
+        .toLowerCase();
+
+    var statusCondition = '';
+    if (requestedStatus == 'cancelled') {
+      statusCondition = "AND LOWER(b.booking_status) = 'cancelled'";
+    } else if (requestedStatus == 'past' || requestedStatus == 'completed') {
+      statusCondition =
+          "AND (LOWER(b.booking_status) = 'completed' OR (LOWER(b.booking_status) = 'confirmed' AND s.show_time < CURRENT_TIMESTAMP))";
+    } else if (requestedStatus == 'upcoming' || requestedStatus == 'active') {
+      statusCondition =
+          "AND LOWER(b.booking_status) = 'confirmed' AND s.show_time >= CURRENT_TIMESTAMP";
+    }
+
     final connection = await openDatabaseConnection();
 
     try {
-      final result = await connection.execute(
-        Sql.named('''
+      final sqlQuery = '''
           SELECT
             b.id,
             b.booking_code,
@@ -313,17 +348,40 @@ class BookingService {
           JOIN theaters t ON sc.theater_id = t.id
           LEFT JOIN booking_seats bs ON bs.booking_id = b.id
           WHERE b.user_id = @userId
+            $statusCondition
           GROUP BY b.id, b.booking_code, b.total_seats, b.ticket_amount, b.convenience_fee,
                    b.total_amount, b.payment_status, b.booking_status, b.qr_code_data, b.created_at,
                    m.title, m.image_url, m.certificate, t.name, t.address, sc.screen_name,
                    s.show_time, s.show_time_formatted, s.format, s.language
           ORDER BY b.created_at DESC
-        '''),
+      ''';
+
+      final result = await connection.execute(
+        Sql.named(sqlQuery),
         parameters: {'userId': userId},
       );
 
+      final now = DateTime.now();
       final bookings = result.map((row) {
         final seats = (row[20] as List?)?.cast<String>() ?? <String>[];
+        final rawStatus = (row[7] as String? ?? 'confirmed').toLowerCase();
+        final showDateTime = (row[16] as DateTime?) ?? now;
+        final isPastShow = showDateTime.isBefore(now);
+
+        var statusCategory = 'upcoming';
+        var effectiveBookingStatus = row[7] as String? ?? 'confirmed';
+
+        if (rawStatus == 'cancelled') {
+          statusCategory = 'cancelled';
+          effectiveBookingStatus = 'cancelled';
+        } else if (rawStatus == 'completed' || isPastShow) {
+          statusCategory = 'past';
+          effectiveBookingStatus = rawStatus == 'confirmed' ? 'completed' : rawStatus;
+        } else {
+          statusCategory = 'upcoming';
+          effectiveBookingStatus = 'confirmed';
+        }
+
         return {
           'id': row[0],
           'bookingCode': row[1],
@@ -332,7 +390,8 @@ class BookingService {
           'convenienceFee': _toDouble(row[4]),
           'totalAmount': _toDouble(row[5]),
           'paymentStatus': row[6],
-          'bookingStatus': row[7],
+          'bookingStatus': effectiveBookingStatus,
+          'statusCategory': statusCategory,
           'qrCodeData': row[8],
           'createdAt': (row[9] as DateTime).toIso8601String(),
           'movie': {
@@ -345,7 +404,7 @@ class BookingService {
             'address': row[14],
             'screen': row[15],
           },
-          'showTime': (row[16] as DateTime).toIso8601String(),
+          'showTime': showDateTime.toIso8601String(),
           'timeFormatted': row[17],
           'format': row[18],
           'language': row[19],
@@ -357,6 +416,7 @@ class BookingService {
         body: {
           'status': 'success',
           'statusCode': 200,
+          'filter': requestedStatus ?? 'all',
           'count': bookings.length,
           'data': bookings,
         },
@@ -370,6 +430,21 @@ class BookingService {
     } finally {
       await connection.close();
     }
+  }
+
+  // 2.1 Get Cancelled Bookings
+  static Future<Response> getCancelledBookings(RequestContext context) async {
+    return getUserBookings(context, 'cancelled');
+  }
+
+  // 2.2 Get Past Bookings
+  static Future<Response> getPastBookings(RequestContext context) async {
+    return getUserBookings(context, 'past');
+  }
+
+  // 2.3 Get Upcoming Bookings
+  static Future<Response> getUpcomingBookings(RequestContext context) async {
+    return getUserBookings(context, 'upcoming');
   }
 
   // 3. Get Single Booking / Ticket by Code
@@ -430,7 +505,7 @@ class BookingService {
                    u.name, u.email, u.phone
           LIMIT 1
         '''),
-        parameters: {'code': bookingCode.trim()},
+        parameters: {'code': bookingCode.replaceAll('#', '').trim()},
       );
 
       if (result.isEmpty) {
@@ -486,6 +561,112 @@ class BookingService {
       );
     } catch (e, st) {
       AppLogger.error('BookingService', 'Error getting booking $bookingCode', error: e, stackTrace: st);
+      return Response.json(
+        statusCode: HttpStatus.internalServerError,
+        body: {'status': 'error', 'message': e.toString()},
+      );
+    } finally {
+      await connection.close();
+    }
+  }
+
+  // 4. Cancel Booking & Initiate Refund
+  static Future<Response> cancelBooking(RequestContext context, [String? bookingCodeParam]) async {
+    String? code = bookingCodeParam?.replaceAll('#', '').trim();
+    String? reason;
+
+    try {
+      final body = await AuthUtils.readJson(context);
+      if (body != null) {
+        if (code == null || code.isEmpty) {
+          code = body['bookingCode']?.toString().replaceAll('#', '').trim();
+        }
+        reason = body['reason']?.toString().trim();
+      }
+    } catch (_) {}
+
+    if (code == null || code.isEmpty) {
+      return Response.json(
+        statusCode: HttpStatus.badRequest,
+        body: {'status': 'error', 'message': 'bookingCode is required.'},
+      );
+    }
+
+    final connection = await openDatabaseConnection();
+
+    try {
+      final selectRes = await connection.execute(
+        Sql.named('''
+          SELECT id, booking_code, total_amount, booking_status, payment_status, user_id
+          FROM bookings
+          WHERE LOWER(booking_code) = LOWER(@code)
+             OR CAST(id AS TEXT) = @code
+          LIMIT 1
+        '''),
+        parameters: {'code': code},
+      );
+
+      if (selectRes.isEmpty) {
+        return Response.json(
+          statusCode: HttpStatus.notFound,
+          body: {'status': 'error', 'message': 'Booking not found.'},
+        );
+      }
+
+      final row = selectRes.first;
+      final bookingId = row[0] as int;
+      final bookingCode = row[1] as String;
+      final totalAmount = _toDouble(row[2]);
+      final currentStatus = (row[3] as String).toLowerCase();
+
+      if (currentStatus == 'cancelled') {
+        return Response.json(
+          body: {
+            'status': 'success',
+            'message': 'Booking $bookingCode is cancelled.',
+            'data': {
+              'bookingId': bookingId,
+              'bookingCode': bookingCode,
+              'bookingStatus': 'cancelled',
+              'paymentStatus': 'refunded',
+              'refundAmount': totalAmount,
+              'refundStatus': 'completed',
+            },
+          },
+        );
+      }
+
+      final now = DateTime.now().toUtc();
+      await connection.execute(
+        Sql.named('''
+          UPDATE bookings
+          SET booking_status = 'cancelled',
+              payment_status = 'refunded'
+          WHERE id = @id
+        '''),
+        parameters: {'id': bookingId},
+      );
+
+      AppLogger.info('BookingService', 'Booking $bookingCode cancelled successfully. Refund: ₹$totalAmount');
+
+      return Response.json(
+        body: {
+          'status': 'success',
+          'message': 'Booking $bookingCode cancelled successfully. Refund of ₹${totalAmount.toStringAsFixed(2)} initiated.',
+          'data': {
+            'bookingId': bookingId,
+            'bookingCode': bookingCode,
+            'bookingStatus': 'cancelled',
+            'paymentStatus': 'refunded',
+            'refundAmount': totalAmount,
+            'refundStatus': 'initiated',
+            'cancelledAt': now.toIso8601String(),
+            if (reason != null && reason.isNotEmpty) 'reason': reason,
+          },
+        },
+      );
+    } catch (e, st) {
+      AppLogger.error('BookingService', 'Error cancelling booking $code', error: e, stackTrace: st);
       return Response.json(
         statusCode: HttpStatus.internalServerError,
         body: {'status': 'error', 'message': e.toString()},

@@ -1,8 +1,9 @@
-﻿import 'package:dart_frog/dart_frog.dart';
+import 'package:dart_frog/dart_frog.dart';
 import 'package:postgres/postgres.dart';
 
 import 'package:tic_one_middleware/database.dart';
 import 'package:tic_one_middleware/services/auth/auth_utils.dart';
+import 'package:tic_one_middleware/services/wallet/wallet_service.dart';
 
 class ProfileService {
   static Future<Response> execute(
@@ -63,6 +64,7 @@ class ProfileService {
       }
 
       final row = result.first;
+      final royalPass = await WalletService.getRoyalPass(connection, userId);
 
       // 6. Return profile
       return Response.json(
@@ -74,7 +76,9 @@ class ProfileService {
             'email': row[2],
             'phone': row[3],
             'createdAt': row[4].toString(),
+            'membership': royalPass,
           },
+          'membership': royalPass,
         },
       );
     } finally {

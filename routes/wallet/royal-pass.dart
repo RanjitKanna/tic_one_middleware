@@ -1,17 +1,12 @@
 import 'dart:io';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:tic_one_middleware/services/wallet/wallet_service.dart';
-import 'package:tic_one_middleware/services/auth/auth_utils.dart';
 
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method == HttpMethod.get) {
-    return WalletService.getWallet(context);
+    return WalletService.getRoyalPassStatus(context);
   } else if (context.request.method == HttpMethod.post) {
-    final body = await AuthUtils.readJson(context);
-    if (body != null && (body['action'] == 'purchase_royal_pass' || body['plan'] == 'royal_pass' || body['type'] == 'royal_pass' || body['royal_pass'] == true)) {
-      return WalletService.purchaseRoyalPass(context);
-    }
-    return WalletService.convertPoints(context, body);
+    return WalletService.purchaseRoyalPass(context);
   }
 
   return Response.json(
