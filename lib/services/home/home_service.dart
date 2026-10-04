@@ -81,7 +81,7 @@ class HomeService {
       ''';
 
       if (language != 'All') {
-        nowShowingSql += ' AND language = @language';
+        nowShowingSql += ' AND LOWER(language) = LOWER(@language)';
         nowShowingParams['language'] = language;
       }
       nowShowingSql += ' ORDER BY is_trending DESC, rating DESC';
@@ -138,7 +138,7 @@ class HomeService {
         };
       }).toList();
 
-      // 5. Fetch Theaters in Selected City with Live Showtimes
+      // 5. Fetch Top 3 Theaters in Selected City with Distinct Live Showtimes
       final theatersResult = await connection.execute(
         Sql.named('''
           SELECT
@@ -149,7 +149,7 @@ class HomeService {
             t.formats,
             t.is_fast_filling,
             COALESCE(
-              ARRAY_AGG(s.show_time_formatted ORDER BY s.show_time ASC) FILTER (WHERE s.id IS NOT NULL),
+              ARRAY_AGG(DISTINCT s.show_time_formatted) FILTER (WHERE s.id IS NOT NULL),
               ARRAY[]::VARCHAR[]
             ) as showtimes
           FROM theaters t
@@ -158,15 +158,25 @@ class HomeService {
           LEFT JOIN shows s ON s.screen_id = sc.id AND s.status = 'active'
           WHERE LOWER(c.name) = LOWER(@city)
           GROUP BY t.id, t.theater_code, t.name, t.distance_info, t.formats, t.is_fast_filling
+          ORDER BY t.id ASC
+          LIMIT 2
         '''),
         parameters: {'city': city},
       );
 
       final nearbyTheaters = theatersResult.map((row) {
         final rawShowtimes = row[6] as List?;
-        final showtimes = (rawShowtimes != null && rawShowtimes.isNotEmpty)
-            ? rawShowtimes.map((e) => e.toString()).toList()
-            : ['01:15 PM', '04:30 PM', '08:00 PM', '10:45 PM'];
+        final distinctShowtimes = <String>{};
+        if (rawShowtimes != null && rawShowtimes.isNotEmpty) {
+          for (final s in rawShowtimes) {
+            final str = s.toString().trim();
+            if (str.isNotEmpty) distinctShowtimes.add(str);
+            if (distinctShowtimes.length >= 6) break;
+          }
+        }
+        final showtimes = distinctShowtimes.isNotEmpty
+            ? distinctShowtimes.toList()
+            : ['10:30 AM', '01:15 PM', '04:30 PM', '08:00 PM', '10:45 PM'];
 
         return {
           'id': row[1],
@@ -176,7 +186,7 @@ class HomeService {
           'showtimes': showtimes,
           'isFastFilling': row[5] ?? false,
         };
-      }).toList();
+      }).take(2).toList();
 
       // 6. Fetch Trailers
       final trailersResult = await connection.execute(
