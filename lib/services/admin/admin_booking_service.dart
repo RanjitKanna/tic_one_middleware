@@ -23,19 +23,19 @@ class AdminBookingService {
     final conn = await openDatabaseConnection();
     try {
       final whereClauses = <String>["1=1"];
-      final sqlParams = <String, dynamic>{'limit': limit, 'offset': offset};
+      final countParams = <String, dynamic>{};
 
       if (search.isNotEmpty) {
         whereClauses.add("(LOWER(b.booking_code) LIKE @search OR LOWER(u.name) LIKE @search OR LOWER(u.email) LIKE @search OR LOWER(m.title) LIKE @search)");
-        sqlParams['search'] = '%${search.toLowerCase()}%';
+        countParams['search'] = '%${search.toLowerCase()}%';
       }
       if (status.isNotEmpty && status != 'all') {
         whereClauses.add("LOWER(b.booking_status) = @status");
-        sqlParams['status'] = status.toLowerCase();
+        countParams['status'] = status.toLowerCase();
       }
       if (date != null && date.isNotEmpty && date != 'all') {
         whereClauses.add("b.created_at::date = @date::date");
-        sqlParams['date'] = date;
+        countParams['date'] = date;
       }
 
       final whereSql = whereClauses.join(' AND ');
@@ -49,9 +49,12 @@ class AdminBookingService {
           JOIN movies m ON s.movie_id = m.id
           WHERE $whereSql
         '''),
-        parameters: sqlParams,
+        parameters: countParams,
       );
       final total = int.parse(countRes.first[0].toString());
+
+      final queryParams = Map<String, dynamic>.from(countParams)
+        ..addAll({'limit': limit, 'offset': offset});
 
       final res = await conn.execute(
         Sql.named('''
@@ -70,7 +73,7 @@ class AdminBookingService {
           ORDER BY b.created_at DESC
           LIMIT @limit OFFSET @offset
         '''),
-        parameters: sqlParams,
+        parameters: queryParams,
       );
 
       final bookings = res.map((r) => {
@@ -223,13 +226,11 @@ class AdminBookingService {
       final totalAmt = double.parse(b[3].toString());
       final refundAmt = (totalAmt * (refundPct / 100)).roundToDouble();
 
-      // Update booking status
       await conn.execute(
         Sql.named("UPDATE bookings SET booking_status = 'cancelled', payment_status = 'refunded' WHERE id = @id"),
         parameters: {'id': id},
       );
 
-      // Create refund record
       final refundId = 'REF-MOV-${DateTime.now().millisecondsSinceEpoch}';
       await conn.execute(
         Sql.named('''
@@ -285,19 +286,19 @@ class AdminBookingService {
     final conn = await openDatabaseConnection();
     try {
       final whereClauses = <String>["1=1"];
-      final sqlParams = <String, dynamic>{'limit': limit, 'offset': offset};
+      final countParams = <String, dynamic>{};
 
       if (search.isNotEmpty) {
         whereClauses.add("(LOWER(b.booking_code) LIKE @search OR LOWER(b.pnr_number) LIKE @search OR LOWER(u.name) LIKE @search OR LOWER(u.email) LIKE @search)");
-        sqlParams['search'] = '%${search.toLowerCase()}%';
+        countParams['search'] = '%${search.toLowerCase()}%';
       }
       if (status.isNotEmpty && status != 'all') {
         whereClauses.add("LOWER(b.booking_status) = @status");
-        sqlParams['status'] = status.toLowerCase();
+        countParams['status'] = status.toLowerCase();
       }
       if (date != null && date.isNotEmpty && date != 'all') {
         whereClauses.add("b.created_at::date = @date::date");
-        sqlParams['date'] = date;
+        countParams['date'] = date;
       }
 
       final whereSql = whereClauses.join(' AND ');
@@ -312,9 +313,12 @@ class AdminBookingService {
           JOIN buses bus ON b.bus_id = bus.id
           WHERE $whereSql
         '''),
-        parameters: sqlParams,
+        parameters: countParams,
       );
       final total = int.parse(countRes.first[0].toString());
+
+      final queryParams = Map<String, dynamic>.from(countParams)
+        ..addAll({'limit': limit, 'offset': offset});
 
       final res = await conn.execute(
         Sql.named('''
@@ -332,7 +336,7 @@ class AdminBookingService {
           ORDER BY b.created_at DESC
           LIMIT @limit OFFSET @offset
         '''),
-        parameters: sqlParams,
+        parameters: queryParams,
       );
 
       final bookings = res.map((r) => {
@@ -415,7 +419,6 @@ class AdminBookingService {
       if (res.isEmpty) return Response.json(statusCode: 404, body: {'error': 'Bus booking not found'});
       final r = res.first;
 
-      // Passengers
       final passRes = await conn.execute(
         Sql.named('''
           SELECT seat_number, passenger_name, age, gender, seat_fare, seat_tier
@@ -508,13 +511,11 @@ class AdminBookingService {
       final totalAmt = double.parse(b[3].toString());
       final refundAmt = (totalAmt * (refundPct / 100)).roundToDouble();
 
-      // Update booking status
       await conn.execute(
         Sql.named("UPDATE bus_bookings SET booking_status = 'cancelled', payment_status = 'refunded' WHERE id = @id"),
         parameters: {'id': id},
       );
 
-      // Record bus cancellation
       final cancelCode = 'CNL-BUS-${DateTime.now().millisecondsSinceEpoch}';
       final cancelInsert = await conn.execute(
         Sql.named('''
@@ -533,7 +534,6 @@ class AdminBookingService {
       );
       final cnlId = cancelInsert.first[0] as int;
 
-      // Record bus refund
       final refundId = 'REF-BUS-${DateTime.now().millisecondsSinceEpoch}';
       await conn.execute(
         Sql.named('''

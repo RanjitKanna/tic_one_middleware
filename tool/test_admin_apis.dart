@@ -102,3 +102,19 @@ void main() async {
 
   print('\nAll Admin API endpoint tests passed successfully!');
 }
+
+void testSeats() async {
+  final loginRes = await sendRequest(
+    'POST',
+    'http://localhost:8080/api/admin/auth/login',
+    body: {'email': 'admin@ticone.com', 'password': 'Admin@123'},
+  );
+  final token = (jsonDecode(loginRes['body'] as String) as Map)['accessToken'] as String;
+  final headers = {'Authorization': 'Bearer $token'};
+  
+  final seatsRes = await sendRequest('GET', 'http://localhost:8080/api/admin/seats?screenId=1', headers: headers);
+  print('Screen 1 Seats Status: ${seatsRes['statusCode']}');
+  
+  final busSeatsRes = await sendRequest('GET', 'http://localhost:8080/api/admin/buses/1/seats', headers: headers);
+  print('Bus 1 Seats Status: ${busSeatsRes['statusCode']}');
+}
