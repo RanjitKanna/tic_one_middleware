@@ -11,7 +11,7 @@ class _MockRequestContext extends Mock implements RequestContext {}
 class _MockRequest extends Mock implements Request {}
 
 void main() {
-  group('middleware', () {
+  group('middlewaree', () {
     late RequestContext context;
     late Request request;
 
