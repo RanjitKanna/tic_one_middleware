@@ -1,5 +1,4 @@
 import 'package:dart_frog/dart_frog.dart';
-import 'package:postgres/postgres.dart';
 import 'package:tic_one_middleware/database.dart';
 import 'package:tic_one_middleware/services/admin/admin_auth_service.dart';
 

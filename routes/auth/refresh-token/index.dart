@@ -1,6 +1,5 @@
 import 'package:dart_frog/dart_frog.dart';
-
-import '../../../lib/services/auth/refresh_token_service.dart';
+import 'package:tic_one_middleware/services/auth/refresh_token_service.dart';
 
 Future<Response> onRequest(
   RequestContext context,

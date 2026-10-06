@@ -187,7 +187,7 @@ class WalletService {
       final isExpired = expiryDate == null || expiryDate.isBefore(now);
       final isPremium = rawStatus == 'PREMIUM_USER' && isActiveRaw && !isExpired;
 
-      final daysRemaining = (isPremium && expiryDate != null)
+      final daysRemaining = isPremium
           ? expiryDate.difference(now).inDays.clamp(0, 365)
           : 0;
 

@@ -1,1 +1,7 @@
 include: package:dart_frog_lint/recommended.yaml
+
+analyzer:
+  exclude:
+    - "bin/server.dart"
+    - "build/**"
+    - ".dart_frog/**"

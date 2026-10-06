@@ -241,7 +241,7 @@ class BusService {
           try {
             amenities = jsonDecode(amenities);
           } catch (_) {
-            amenities = [];
+            amenities = <dynamic>[];
           }
         }
 
@@ -273,7 +273,7 @@ class BusService {
             'availableSeats': availableSeats,
             'bookedSeats': bookedSeats,
             'lockedSeats': lockedSeats,
-            'amenities': amenities ?? [],
+            'amenities': amenities ?? <dynamic>[],
             'liveTrackingAvailable': row[20] == true,
           },
           'operator': {
@@ -485,7 +485,7 @@ class BusService {
         try {
           amenities = jsonDecode(amenities);
         } catch (_) {
-          amenities = [];
+          amenities = <dynamic>[];
         }
       }
 
@@ -520,7 +520,7 @@ class BusService {
               'availableSeats': availableCount,
               'bookedSeats': bookedCount,
               'lockedSeats': lockedCount,
-              'amenities': amenities ?? [],
+              'amenities': amenities ?? <dynamic>[],
               'liveTrackingAvailable': row[20] == true,
             },
             'operator': {
@@ -1031,7 +1031,6 @@ class BusService {
     var targetId = busIdOrTripIdParam ?? params['busId'] ?? params['tripId'];
     var passengerCount = _toInt(params['passengers'] ?? params['count'] ?? params['passengerCount'], 1);
     var preference = (params['preference'] ?? params['type'] ?? 'comfort').toLowerCase();
-    var genderPref = (params['gender'] ?? 'any').toLowerCase();
 
     // If POST request, check JSON body
     if (context.request.method == HttpMethod.post) {
@@ -1043,7 +1042,6 @@ class BusService {
           }
           if (body['passengerCount'] != null) passengerCount = _toInt(body['passengerCount'], passengerCount);
           if (body['preference'] != null) preference = body['preference'].toString().toLowerCase();
-          if (body['gender'] != null) genderPref = body['gender'].toString().toLowerCase();
         }
       } catch (_) {}
     }
@@ -1086,7 +1084,6 @@ class BusService {
       final tripId = tripRes.first[0] as int;
       final busId = tripRes.first[1] as int;
       final baseFare = _toDouble(tripRes.first[2], 750.0);
-      final busCategory = tripRes.first[4] as String;
 
       // Fetch all available seats for this trip
       final seatsRes = await connection.execute(
@@ -1131,7 +1128,7 @@ class BusService {
             'status': 'success',
             'statusCode': 200,
             'message': 'No available seats on this bus.',
-            'recommendations': [],
+            'recommendations': <Map<String, dynamic>>[],
           },
         );
       }

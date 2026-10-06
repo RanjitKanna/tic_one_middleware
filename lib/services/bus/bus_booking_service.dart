@@ -1105,7 +1105,7 @@ class BusBookingService {
         try {
           amenities = jsonDecode(amenities);
         } catch (_) {
-          amenities = [];
+          amenities = <dynamic>[];
         }
       }
 
@@ -1146,7 +1146,7 @@ class BusBookingService {
               'name': row[24],
               'number': row[25],
               'type': row[26],
-              'amenities': amenities ?? [],
+              'amenities': amenities ?? <dynamic>[],
             },
             'operator': {
               'name': row[28],
