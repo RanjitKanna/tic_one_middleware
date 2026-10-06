@@ -13,7 +13,10 @@ FROM debian:bookworm-slim
 
 WORKDIR /app
 
-COPY --from=build /runtime/ /
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/bin/server /app/bin/server
 
 EXPOSE 8080
