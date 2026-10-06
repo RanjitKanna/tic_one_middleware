@@ -4,7 +4,8 @@ import 'package:tic_one_middleware/utils/app_logger.dart';
 
 const _corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD',
+  'Access-Control-Allow-Methods':
+      'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD',
   'Access-Control-Allow-Headers':
       'Origin, Content-Type, Authorization, Accept, X-Requested-With, Application, x-client-info',
   'Access-Control-Max-Age': '86400',
