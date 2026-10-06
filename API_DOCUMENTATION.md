@@ -469,7 +469,11 @@ This document outlines all available endpoints, request/response models, and hea
 
 ### 6.4 Cancel Ticket Booking
 * **Endpoint**: `POST /bookings/:bookingCode/cancel` (or `POST /bookings/cancel`)
+<<<<<<< HEAD
 * **Auth**: `Bearer <accessToken>` (Optional / Required depending on scope)
+=======
+* **Auth**: None / Optional Bearer Token
+>>>>>>> f6007a9 (feat: add booking cancellation and retrieval endpoints with docker support)
 
 #### Request Body
 ```json
@@ -485,8 +489,15 @@ This document outlines all available endpoints, request/response models, and hea
   "status": "success",
   "message": "Booking TIC-2026-216175 cancelled successfully. Refund of ₹911.40 initiated.",
   "data": {
+<<<<<<< HEAD
     "bookingCode": "TIC-2026-216175",
     "bookingStatus": "cancelled",
+=======
+    "bookingId": 1,
+    "bookingCode": "TIC-2026-216175",
+    "bookingStatus": "cancelled",
+    "paymentStatus": "refunded",
+>>>>>>> f6007a9 (feat: add booking cancellation and retrieval endpoints with docker support)
     "refundAmount": 911.40,
     "refundStatus": "initiated",
     "cancelledAt": "2026-10-04T08:15:00.000Z"
@@ -581,6 +592,7 @@ This document outlines all available endpoints, request/response models, and hea
   ]
 }
 ```
+<<<<<<< HEAD
 
 
 
@@ -1074,3 +1086,5 @@ The Bus Booking module shares the exact same JWT authentication and user profile
 * **Verify Payment**: `POST /bus-payments/verify`
 * **Get Payment Receipt**: `GET /bus-payments/:paymentId`
 
+=======
+>>>>>>> f6007a9 (feat: add booking cancellation and retrieval endpoints with docker support)
