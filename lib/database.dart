@@ -11,8 +11,7 @@ Future<Connection> openDatabaseConnection() async {
       password: Env.dbPassword,
     ),
     settings: const ConnectionSettings(
-      sslMode: SslMode.disable,
+      sslMode: SslMode.require,
     ),
   );
 }
-
