@@ -406,6 +406,10 @@ class AdminBusService {
       final updates = <String>[];
       final sqlParams = <String, dynamic>{'id': id};
 
+      if (body.containsKey('operatorId')) {
+        updates.add('operator_id = @operatorId');
+        sqlParams['operatorId'] = int.tryParse(body['operatorId'].toString());
+      }
       if (body.containsKey('busName')) {
         updates.add('bus_name = @busName');
         sqlParams['busName'] = body['busName'].toString().trim();
@@ -450,6 +454,15 @@ class AdminBusService {
         parameters: sqlParams,
       );
 
+      await AdminAuthService.logAction(
+        adminId: admin['id'] as int,
+        adminEmail: admin['email'] as String,
+        action: 'UPDATE_BUS',
+        entityType: 'bus',
+        entityId: id.toString(),
+        connection: conn,
+      );
+
       return Response.json(body: {'message': 'Bus updated successfully'});
     } finally {
       await conn.close();
@@ -469,6 +482,15 @@ class AdminBusService {
         Sql.named('UPDATE buses SET is_deleted = true, deleted_at = CURRENT_TIMESTAMP WHERE id = @id'),
         parameters: {'id': id},
       );
+      await AdminAuthService.logAction(
+        adminId: admin['id'] as int,
+        adminEmail: admin['email'] as String,
+        action: 'DELETE_BUS',
+        entityType: 'bus',
+        entityId: id.toString(),
+        connection: conn,
+      );
+
       return Response.json(body: {'message': 'Bus deleted successfully'});
     } finally {
       await conn.close();
