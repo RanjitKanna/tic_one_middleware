@@ -332,8 +332,11 @@ class BusBookingService {
     }
 
     final tripId = _toInt(tripIdRaw);
-    final boardingPointId = body['boardingPointId'] != null ? _toInt(body['boardingPointId']) : null;
-    final droppingPointId = body['droppingPointId'] != null ? _toInt(body['droppingPointId']) : null;
+    // Treat missing, zero, negative or unparseable IDs as "not selected" (FK columns are nullable)
+    final bpRaw = _toInt(body['boardingPointId']);
+    final dpRaw = _toInt(body['droppingPointId']);
+    final boardingPointId = bpRaw > 0 ? bpRaw : null;
+    final droppingPointId = dpRaw > 0 ? dpRaw : null;
     final contactEmail = body['contactEmail']?.toString().trim() ?? '';
     final contactPhone = body['contactPhone']?.toString().trim() ?? '';
     final promoCode = body['promoCode']?.toString().trim().toUpperCase();
@@ -449,6 +452,32 @@ class BusBookingService {
               'status': 'error',
               'message': "Passenger '${p['name']}' is assigned to seat '${p['seatNumber']}', which is not in your locked seats list (${lockedSeatNums.join(', ')})",
             },
+          );
+        }
+      }
+
+      // Validate boarding / dropping points belong to this trip
+      if (boardingPointId != null) {
+        final bpCheck = await connection.execute(
+          Sql.named('SELECT 1 FROM boarding_points WHERE id = @id AND trip_id = @tId LIMIT 1'),
+          parameters: {'id': boardingPointId, 'tId': tripId},
+        );
+        if (bpCheck.isEmpty) {
+          return Response.json(
+            statusCode: HttpStatus.badRequest,
+            body: {'status': 'error', 'message': 'Invalid boardingPointId $boardingPointId for this trip'},
+          );
+        }
+      }
+      if (droppingPointId != null) {
+        final dpCheck = await connection.execute(
+          Sql.named('SELECT 1 FROM dropping_points WHERE id = @id AND trip_id = @tId LIMIT 1'),
+          parameters: {'id': droppingPointId, 'tId': tripId},
+        );
+        if (dpCheck.isEmpty) {
+          return Response.json(
+            statusCode: HttpStatus.badRequest,
+            body: {'status': 'error', 'message': 'Invalid droppingPointId $droppingPointId for this trip'},
           );
         }
       }

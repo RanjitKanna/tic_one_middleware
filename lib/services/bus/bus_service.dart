@@ -78,7 +78,9 @@ class BusService {
       }
 
       // Bus Type filter (AC / Non-AC / Sleeper / Seater / Semi-Sleeper)
-      if (busTypeFilter != null && busTypeFilter.trim().isNotEmpty) {
+      if (busTypeFilter != null &&
+          busTypeFilter.trim().isNotEmpty &&
+          busTypeFilter.trim().toLowerCase() != 'all') {
         final bType = busTypeFilter.trim().toLowerCase();
         if (bType == 'ac') {
           whereClauses.add('b.is_ac = true');
