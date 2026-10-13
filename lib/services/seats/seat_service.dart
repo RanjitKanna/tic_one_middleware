@@ -242,7 +242,7 @@ class SeatService {
         params['ids'] = seatIdsRaw!.map((e) => int.parse(e.toString())).toList();
       }
 
-      final seatsToLockRes = await connection.execute(
+      var seatsToLockRes = await connection.execute(
         Sql.named('''
           SELECT
             st.id,
@@ -274,10 +274,98 @@ class SeatService {
         parameters: params,
       );
 
-      if (seatsToLockRes.isEmpty) {
+      // Auto-provision any missing cinema seat identifiers for this screen (e.g. rows A-J, 1-12)
+      if (seatIdentifiers != null && seatsToLockRes.length < seatIdentifiers.length) {
+        final foundIdentifiers = seatsToLockRes.map((r) => r[1].toString().toUpperCase()).toSet();
+        final missingIdentifiers = seatIdentifiers
+            .map((e) => e.toString().toUpperCase())
+            .where((id) => !foundIdentifiers.contains(id))
+            .toList();
+
+        final showRes = await connection.execute(
+          Sql.named('SELECT screen_id FROM shows WHERE id = @showId LIMIT 1'),
+          parameters: {'showId': showId},
+        );
+        if (showRes.isNotEmpty) {
+          final screenId = showRes.first[0] as int;
+          for (final missing in missingIdentifiers) {
+            final match = RegExp(r'^([A-Z])(\d{1,2})$').firstMatch(missing);
+            if (match != null) {
+              final rowLabel = match.group(1)!;
+              final seatNum = int.tryParse(match.group(2)!) ?? 1;
+              String tier = 'Silver';
+              double mult = 1.00;
+              if (['C', 'D', 'E'].contains(rowLabel)) {
+                tier = 'Gold';
+                mult = 1.25;
+              } else if (['F', 'G', 'H', 'J', 'K'].contains(rowLabel)) {
+                tier = 'Platinum Recliner';
+                mult = 1.60;
+              }
+
+              await connection.execute(
+                Sql.named('''
+                  INSERT INTO seats (screen_id, row_label, seat_number, seat_identifier, tier_name, seat_type, multiplier, is_active)
+                  VALUES (@screenId, @rowLabel, @seatNum, @identifier, @tier, 'normal', @mult, true)
+                  ON CONFLICT (screen_id, row_label, seat_number) DO NOTHING
+                '''),
+                parameters: {
+                  'screenId': screenId,
+                  'rowLabel': rowLabel,
+                  'seatNum': seatNum,
+                  'identifier': missing,
+                  'tier': tier,
+                  'mult': mult,
+                },
+              );
+            }
+          }
+
+          // Re-query seatsToLockRes to include the freshly provisioned seats
+          seatsToLockRes = await connection.execute(
+            Sql.named('''
+              SELECT
+                st.id,
+                st.seat_identifier,
+                st.tier_name,
+                st.multiplier,
+                s.base_price,
+                CASE
+                  WHEN bs.id IS NOT NULL THEN 'booked'
+                  WHEN sl.id IS NOT NULL THEN 'locked'
+                  ELSE 'available'
+                END AS current_status
+              FROM shows s
+              JOIN screens sc ON s.screen_id = sc.id
+              JOIN seats st ON st.screen_id = sc.id
+              LEFT JOIN (
+                SELECT bs.seat_id, bs.id
+                FROM booking_seats bs
+                JOIN bookings b ON bs.booking_id = b.id
+                WHERE b.show_id = @showId AND b.booking_status != 'cancelled'
+              ) bs ON bs.seat_id = st.id
+              LEFT JOIN (
+                SELECT sl.seat_id, sl.id
+                FROM seat_locks sl
+                WHERE sl.show_id = @showId AND sl.expires_at > CURRENT_TIMESTAMP
+              ) sl ON sl.seat_id = st.id
+              WHERE s.id = @showId AND $seatFilterSql
+            '''),
+            parameters: params,
+          );
+        }
+      }
+
+      final expectedCount = seatIdentifiers?.length ?? seatIdsRaw?.length ?? 0;
+      if (seatsToLockRes.length < expectedCount || seatsToLockRes.isEmpty) {
+        final found = seatsToLockRes.map((r) => r[1].toString().toUpperCase()).toSet();
+        final missing = (seatIdentifiers ?? []).where((id) => !found.contains(id.toString().toUpperCase())).toList();
         return Response.json(
           statusCode: HttpStatus.notFound,
-          body: {'status': 'error', 'message': 'Selected seats not found for this show'},
+          body: {
+            'status': 'error',
+            'message': 'Selected seats not found for this show: ${missing.join(", ")}',
+          },
         );
       }
 
