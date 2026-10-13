@@ -100,7 +100,7 @@ import '../routes/api/admin/audit-logs/index.dart' as api_admin_audit_logs_index
 import '../routes/_middleware.dart' as middleware;
 
 void main() async {
-  final address = InternetAddress.anyIPv4;
+  final address = InternetAddress.anyIPv6;
   final port = int.tryParse(Platform.environment['PORT'] ?? '8080') ?? 8080;
   createServer(address, port);
 }
