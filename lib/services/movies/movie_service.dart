@@ -381,17 +381,73 @@ class MovieService {
 
             for (int sIdx = 0; sIdx < slots.length; sIdx++) {
               final slotTime = slots[sIdx];
+              final slotParts = slotTime.split(' ');
+              final hm = slotParts[0].split(':');
+              int h = int.parse(hm[0]);
+              final m = int.parse(hm[1]);
+              if (slotParts[1].toUpperCase() == 'PM' && h != 12) h += 12;
+              if (slotParts[1].toUpperCase() == 'AM' && h == 12) h = 0;
+              final parsedDate = DateTime.tryParse(date) ?? DateTime.now();
+              final showDateTime = DateTime.utc(parsedDate.year, parsedDate.month, parsedDate.day, h, m);
+              final format = movieFormat.contains('IMAX') ? 'IMAX 3D Laser' : 'Dolby Atmos 7.1';
+              final basePrice = movieFormat.contains('IMAX') ? 350.0 : 250.0;
+              final isFastFilling = sIdx == 1 || sIdx == 3;
+              final screenId = row[6] as int;
+
+              int realShowId;
+              try {
+                final existingShow = await connection.execute(
+                  Sql.named('''
+                    SELECT id FROM shows
+                    WHERE movie_id = @movieId AND screen_id = @screenId AND show_time = @showTime
+                    LIMIT 1
+                  '''),
+                  parameters: {
+                    'movieId': movieId,
+                    'screenId': screenId,
+                    'showTime': showDateTime,
+                  },
+                );
+
+                if (existingShow.isNotEmpty) {
+                  realShowId = existingShow.first[0] as int;
+                } else {
+                  final ins = await connection.execute(
+                    Sql.named('''
+                      INSERT INTO shows (
+                        movie_id, screen_id, show_time, show_time_formatted, language, format, base_price, status, is_fast_filling
+                      ) VALUES (
+                        @movieId, @screenId, @showTime, @showTimeFormatted, @language, @format, @basePrice, 'active', @isFastFilling
+                      ) RETURNING id
+                    '''),
+                    parameters: {
+                      'movieId': movieId,
+                      'screenId': screenId,
+                      'showTime': showDateTime,
+                      'showTimeFormatted': slotTime,
+                      'language': movie[6] ?? 'English',
+                      'format': format,
+                      'basePrice': basePrice,
+                      'isFastFilling': isFastFilling,
+                    },
+                  );
+                  realShowId = ins.first[0] as int;
+                }
+              } catch (_) {
+                realShowId = tId * 100 + sIdx + 1;
+              }
+
               generatedShows.add({
-                'showId': tId * 100 + sIdx + 1,
-                'screenId': row[6],
+                'showId': realShowId,
+                'screenId': screenId,
                 'screenName': row[7],
-                'showTime': '${date}T${slotTime.contains('PM') ? '18:00:00.000Z' : '10:00:00.000Z'}',
+                'showTime': showDateTime.toIso8601String(),
                 'timeFormatted': slotTime,
                 'language': movie[6] ?? 'English',
-                'format': movieFormat.contains('IMAX') ? 'IMAX 3D Laser' : 'Dolby Atmos 7.1',
-                'basePrice': movieFormat.contains('IMAX') ? 350.0 : 250.0,
+                'format': format,
+                'basePrice': basePrice,
                 'status': 'active',
-                'isFastFilling': sIdx == 1 || sIdx == 3,
+                'isFastFilling': isFastFilling,
               });
             }
 

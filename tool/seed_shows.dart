@@ -6,11 +6,9 @@ void main() async {
   try {
     print('Starting showtime seeding for all movies and cities...');
 
-    // 1. Clear existing shows & seat_locks
-    await connection.execute(Sql.named('DELETE FROM seat_locks'));
-    await connection.execute(Sql.named('DELETE FROM booking_seats'));
-    await connection.execute(Sql.named('DELETE FROM bookings'));
-    await connection.execute(Sql.named('DELETE FROM shows'));
+    // 1. Clear expired seat locks and old shows without bookings
+    await connection.execute(Sql.named('DELETE FROM seat_locks WHERE expires_at <= CURRENT_TIMESTAMP'));
+    await connection.execute(Sql.named('DELETE FROM shows WHERE id NOT IN (SELECT show_id FROM bookings) AND show_time < CURRENT_DATE'));
 
     // 2. Fetch all now_showing movies
     final moviesRes = await connection.execute(
@@ -105,7 +103,7 @@ void main() async {
         }
 
         // Generate shows for next 10 days
-        for (int dayOffset = 0; dayOffset < 10; dayOffset++) {
+        for (int dayOffset = 0; dayOffset < 14; dayOffset++) {
           final showDate = today.add(Duration(days: dayOffset));
           int screenIndex = 0;
 
